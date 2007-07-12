@@ -1,0 +1,321 @@
+The basic idea
+======================================================================
+
+    A build request is like a first order logic query.  You ask the system if
+    it can create a particular file (or condition) and it tries to comply while
+    answering.
+
+    There are elements of standard make that are inevitably borrowed: each rule
+    is not only a statement of what is possible, but also a set of instructions
+    that can make it happen if the antecedents are satisfiable.  The way make
+    does it is somewhat inflexible and not really extensible at all, and this
+    system is intended to solve some of that.
+
+    One of make's biggest shortcomings is the fact that it cannot really handle
+    complex logic by itself.  It is not, by itself, Turing complete.  One might
+    argue that this is a good thing, that it was not built to be a programming
+    language, but a build system.  As time goes on, however, it gains more and
+    more complex features, but it can never support computation natively in an
+    elegant way because of the need for backward compatibility.
+
+    Hagoth, like make, is made to process facts (the existence of files), rules
+    (dependencies between files), and queries (targets).  It also supports
+    instructions for making dependencies hold true, of course, since that is
+    the essence of performing a build: a relationship is possible, but only
+    after the execution of compilation or build logic.
+
+    Consider for a moment the basic logic of standard make, written in
+    pseudo-Prolog:
+
+    test(Target, Dep1, ..., DepN) :- exec(testlogic, Target, Dep1, ..., DepN).
+    test(Target, Dep1, ..., DepN) :- exec(buildlogic, Target, Dep1, ..., DepN).
+
+    where
+
+      - exec is a special primitive predicate that executes its first argument
+        in the environment provided by the remaining arguments
+
+      - test is simply a predicate
+
+      - testlogic is a set of imperative commands that resolves to true when
+        all dependencies are "true" and the target is also "true" (e.g., all
+        dependencies exist and the target is newer than all of them)
+
+      - buildlogic is a set of imperative commands that, given a set of
+        satisfied dependencies, will at least attempt to satisfy the whole
+        relationship, resulting in a valid target.
+
+      - the first rule is attempted first, and if it is successfully applied,
+        the second does not need to be.  For example, if the target is already
+        built, then the build logic does not need to be run and the test
+        returns true.
+
+    This file implements the main engine, which matches a query (please build
+    this target) to a rule, forming other queries and matching them until all
+    conditions are met or something breaks down somewhere along the line.  The
+    implementation of actual testlogic and buildlogic rules that can accept
+    targets and dependencies is part of the build specification and may be
+    idiosyncratic.  A standard ruleset is provided, however, and it works like
+    standard make.  The syntax is geared toward this most common case, making
+    it very simple to specify obvious things while allowing arbitrarily less
+    obvious things to still be done.
+
+    There are four basic fundamentals in this build system.  They are
+
+    predicates::
+
+        A predicate is something that is either true or false.  It can contain
+        arguments, like FileIsCurrent(filename).  This predicate would evaluate
+        to true if "filename" is up to date.  What that means is specified in
+        rules.
+
+    variables::
+
+        A variable is simply an unknown.  It will take on a predicate value at
+        some point during build evaluation and execution, or the build will
+        fail due to unresolved queries.
+
+    rules::
+
+        A rule is a target predicate and a list of dependency predicates.  The
+        truth value o the taret predicate (whether it is satisfiable or not) is
+        dependent on the satisfiability of the dependencies.  Typically the
+        target is called the "consequent" and the dependencies are called
+        "antecedents" in first order logic.
+
+    commands::
+
+        A command is an imperative that does something.  This represents an
+        important departure from pure first order logic, because it is not
+        declarative.  It is an instruction that, if executed, can return a
+        value and cause side effects, like the creation of a file or the
+        setting of a variable.
+
+    
+    Basic "make" behavior involves the matching of predicates (file names) with
+    targets of rules.  When a match is found, the dependencies are evaluated as
+    predicates in need of matching until they all represent files that exist.
+    If the dependencies all exist but the target is either older than them or
+    does not exist at all, the specified commands are executed.  This system
+    *can* have precisely the same behavior, but can also have more complex
+    behavior. The default behavior is to treat filenames as
+    FileIsCurrent(filename) predicates and rules as similar in spirit to make,
+    as described above.
+
+    A common query, then, would be something like this:
+
+    ?- FileIsCurrent("executable").
+
+    It would match against rules like these:
+
+        FileIsCurrent("executable") :-
+            FileIsCurrent("main.o").
+
+        FileIsCurrent("main.o") :-
+            FileIsCurrent("main.c"), FileIsCurrent("main.h").
+
+        FileIsCurrent("executable") :- Exists("executable").
+        FileIsCurrent("main.o") :- Exists("main.o").
+        FileIsCurrent("main.h") :- Exists("main.h").
+        FileIsCurrent("main.c") :- Exists("main.c").
+
+    The Exists predicate could be treated as a special primitive that actually
+    queries the file system.  The ability to create such primitives that
+    perform imperative commands to determine truth values is one of the
+    powerful features of this system.
+
+    The syntax for the above set of rules will be much simpler than what is
+    shown.  They are simply shown to indicate what the system wiil do.
+
+    Matching can also be expressed in these rules, but is much harder to think
+    about in terms of pure Prolog.  Instead, it is best to think of Hagoth
+    rules as generalizations of the above: a single rule can have a consequent
+    and multiple antecedents, and it can impose arbitrary conditions on the
+    variables.  For example, it might impose a regular expression on any
+    filename that would be valid for a particular rule:
+
+        FileIsCurrent("^\(.*\)\.o") :-
+            FileIsCurrent("\1\.c"), FileIsCurrent("\1\.h).
+
+    The actual syntax, of course, would not be like that.  The fact is that
+    anything is possible, since a rule has intimate knowledge of all aspects of
+    the consequents and antecedents and can therefore impose any restrictions
+    or perform any information blending that it likes.
+
+Some random thoughts
+======================================================================
+
+- In first order logic, when a rule is actually evaluted, all variables have
+  been resolved.  If they haven't, the rule can't be evaluated.
+
+- Resolution of variables goes in two directions: bubbling "up" through the
+  rules starting with the query, and bubbling "down" from the facts until the
+  query's satisfiability is known.  We can take advantage of that fact in our
+  design, since variable values should be passable both directions.
+
+- Resolution and unification are the mainstays of first order logic
+  programming.  These essentially involve assigning values to variables.
+  Typically this is done by wholesale assignment with no conditions placed on
+  the values that variables can take on, but there is no reason that has to be
+  the case.  It would be perfectly valid, for example, to require a regular
+  expression match for a variable, and to carry around submatches as their own
+  variable assignments.  This will allow normal make-style stuff to happen.
+
+Logic Engine Specification
+======================================================================
+
+    Find next rule whose target matches the query.
+    Concretize dependencies and resolve each of them.
+    if they are all satisfied: 
+        if "test" returns true:
+            target is satisfied
+        elif "commands" run successfully:
+            if "test" returns true:
+                target is satisfied
+            else:
+                target is not satisfiable - give up entirely
+        else:
+            target is not satisfiable - give up entirely
+    else:
+        dependencies are not satisfiable, keep trying other rules
+
+Elements
+======================================================================
+
+Variable:
+
+    An instance of the Variable class, a variable has a name and a set of
+    constraints that have to be met for it to accept values.  The constraints
+    can be empty, in which case it accepts anything (standard Prolog).  They
+    can also be regular expressions, in which case only matching predicates
+    will admit assignment.  Any variable can be assigned to another variable,
+    thus:
+
+        A/B, B/C, C/D
+
+    But, once a concrete value is obtained somewhere along the chain, all
+    constraints must be met or something fails.  For example, if D allows
+    anything, then it can take on the value "file.o", but if C only allows
+    "^.*\.c$", then it won't match and the assignment to C fails (and therefore
+    the C/D assignment is invalid).
+
+    Once an assignment has been made, the variable can have sub-values, like
+    groups in a regular expression.  For example, C's constraint may be the
+    following:
+
+        ^\(.*\)\.c$
+
+    This means that when a match succeeds, \1 is a valid group.  We can think
+    of that as C_1 and there can be as many of these as regular expressions
+    will permit.  Variables can declare that they have the same name as another
+    variable, but only make use of a sub value (the following syntax is just an
+    attempt at clarification, and may not be real syntax at all):
+
+        file="^\(.*\)\.o$" : file(1).c file(1).h
+
+    It would be trivial to provide some syntactic sugar for this that is
+    similar to make:
+
+        %.o : %.c %.h
+
+    This syntax is easy to translate to the above.  The limitation is that only
+    one variable is allowed, implicitly invoked by the presence of "%".  There
+    may be a nice syntactic way of extending that prettier syntax to handle
+    more than one variable, perhaps by allowing %{name} or something similar.
+
+    Syntax aside, variables are assigned to values only if they match, and
+    during resolution they can be assigned to other variables.  Constraints
+    that are not regular expressions can be specified by subclasing and
+    registering different variable types.
+
+Predicate:
+
+    A predicate is essentially a truth *value*, not a variable.  In first order
+    logic, it can contain other predicates, though it is expected that this
+    will be rare in a build system.  It is hard to explain what a predicate is,
+    so brush up on first order logic first.  It is not a function, although it
+    is often depicted that way.  Predicates do take arguments, but their truth
+    value is not dependent on arguments alone, but on rules in which the
+    predicate appears as a consequent.  In this build system, predicates are
+    entirely pure.
+
+Fact:
+
+    A fact is something that is simply stated.  It can be a predicate, or it
+    can be a bare word.  For example, the following would be a fact:
+
+        FileExists("file.c").
+
+    In a build system, facts don't make too much sense like this.  The above
+    statement would short circuit any attempt to actually *find out* whether
+    the file exists or not, and would simply state that it does.  It's akin to
+    doing something like this in make, although make has subtle and tricky
+    semantics here (here be monsters):
+
+        file.c:
+
+    Instead, in this build system, all facts are functions that go and do work,
+    then return True or False.
+
+    Because Facts and Predicates look so similar, it may make sense to unify
+    their syntax and just have implicit tests as to which is which.  That might
+    confuse users of the system, however, so we'll have to think about that.
+    At any rate, a Fact is a callable that returns a boolean value.
+
+Rule:
+
+    A rule is a single consequent and a list of antecedents, thus:
+
+        FileIsCurrent("file.o") :- FileIsCurrent("file.c")
+
+    The syntax is not yet developed for this, but essentially the following
+    happens when a rule is defined:
+
+    - The *type* of the rule is determined by the consequent.  This rule is the
+      "FileIsCurrent" rule, and it happens to have a dependency on another such
+      rule.  It could just as easily have a different kind of dependency, which
+      would invoke a different kind of rule.
+
+    - Each rule type has an associated *test* that it performs to determine
+      whether the rule is satisfied.  The test associated with FileIsCurrent
+      would check timestamps and file existence before declaring victory.
+
+    - Each rule type also has an associated set of commands.  These are the
+      build commands (like gcc -o) that, given a failing *test*, attempt to
+      make the *test* pass.
+
+    Rules are where the real magic happens.  A query is a predicate of some
+    kind, usually FileIsCurrent("executable").  This is essentially a
+    specification of what rule to match against, and it of course matches any
+    of the rules that have FileIsCurrent(something_matching_the_name) as a
+    consequent.
+
+    A predicate, therefore, is nothing more than a name and some arguments,
+    which can be variables or predicates or facts.  This predicated is matched
+    against all appropriate rule types, and only those specific rule instances
+    that match are then considered (in order, from the top of the file to the
+    bottom).  Once a match has occurred, the rule's antecedents are added to
+    the match list and the matching continues until all variables are
+    concretely resolved.  If all antecedents cannot be resolved, the rule is
+    considered a failure and the next one is tried.
+
+    Once all antecedents are resolved, however, the rule's *test* is run.  If
+    the test comes back false (in this case, meaning that "file.o" is not, in
+    fact, current compared to "file.c"), then the rule's *commands* are run.
+    The *test* is then performed again.  If it is false again, we have an
+    outright failure and the whole process aborts.  Otherwise, it is true, and
+    everything continues normally; the consequent is validly assigned and can
+    be used as the antecedent of another rule.  If the consequent happens to be
+    the query itself, then the process finishes successfully.
+
+Possible Issues:
+
+    It would be nice if we didn't have to build everything to know whether a
+    rule is the right one or not.  Can we make the *assumption* that the rule's
+    test will pass and see where that takes us, or must we always run the build
+    commands first?  I am guessing that the latter is the case, but the former
+    is fairly attractive in a general sense.  Perhaps that would be what the
+    "dry run" flag would do.  We can put that in there and then see what
+    happens, certainly.
+
+.. vim: et sts=4 sw=4
