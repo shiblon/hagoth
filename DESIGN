@@ -142,6 +142,13 @@ The basic idea
     the consequents and antecedents and can therefore impose any restrictions
     or perform any information blending that it likes.
 
+    There is a restriction on these kinds of variables, however.  If a subgroup
+    of a consequent variable is referenced in the antecedents, then it must be
+    completely assigned before the antecedents can be tested for
+    satisfiability.  In other words, the query matching the consequent must
+    have a bare word where the consequent's variable resides, allowing for the
+    regular expression to be fully executed before further resolution is done.
+
 Some random thoughts
 ======================================================================
 
@@ -257,10 +264,10 @@ Fact:
     Instead, in this build system, all facts are functions that go and do work,
     then return True or False.
 
-    Because Facts and Predicates look so similar, it may make sense to unify
-    their syntax and just have implicit tests as to which is which.  That might
-    confuse users of the system, however, so we'll have to think about that.
-    At any rate, a Fact is a callable that returns a boolean value.
+    In addition, facts may have rules that *make* them true.  They have exactly
+    the same semantics as rules without antecedents: the empty antecedent list
+    is vacuously true, and therefore if the test fails, the build logic is
+    applied and the test is tried again.  Facts are simply rules.
 
 Rule:
 
@@ -318,4 +325,4 @@ Possible Issues:
     "dry run" flag would do.  We can put that in there and then see what
     happens, certainly.
 
-.. vim: et sts=4 sw=4
+.. vim: ft=rst et sts=4 sw=4
