@@ -1,0 +1,22 @@
+% This is an example of a situation where the need to determine whether a
+% predicate contains the variable it is about to be assigned to arises.  Note
+% that when the query is unified with the consequent, X/pred2(Y) and
+% Y/pred2(X).  When flattened, this means that X/pred2(pred2(X)) and
+% Y/pred2(pred2(Y)).  This is, of course, nonsensical, but entirely possible.
+
+pred1(X,pred2(X)).
+?- pred1(pred2(Y),Y).
+
+% Another weird situation.  X/pred2(Y) and X/Y.  Since X is already assigned,
+% this is an error.
+
+pred1(X,X).
+?- pred1(pred2(Y),Y).
+
+% Question: should this work, since X will already be assigned in this case?  I
+% believe it should be allowed, as matching and unification happen more or less
+% at the same time (a full match is only detected after complete unification,
+% which requires partial matching, etc).
+
+pred1(X,X).
+?- pred1(pred2(Y), pred2(Y)).
