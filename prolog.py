@@ -39,7 +39,7 @@ class Predicate(object):
         for i, a in enumerate(self.args):
             if mapping.is_var(a):
                 if a not in mapping:
-                    mapping.add(a, factory())
+                    mapping.add(a, Var(factory.next()))
                 self.args[i] = mapping[a]
             else:
                 a.standardize_vars(factory, mapping)
@@ -70,7 +70,7 @@ class Predicate(object):
 
         # If it's still a variable after asking the map for it, then we defer
         # to that variable's unification routine.
-        if mapping.is_var(other)
+        if mapping.is_var(other):
             return other.unify(self, mapping)
 
         # Other must be a predicate, so do the predicate matching logic: match
@@ -83,8 +83,8 @@ class Predicate(object):
         # example.
         for thisarg, otherarg in izip(self.args, other.args):
             if not thisarg.unify(otherarg, mapping):
-                return false
-        return true
+                return False
+        return True
 
     def substitute( self, mapping ):
         """Returns a copy of this predicate with all variables resolved"""
@@ -153,8 +153,8 @@ class  VarMap(object):
     def __str__( self ):
         items = []
         for k, (var, val) in self.vardict.iteritems():
-            items.append("%s -> %s" % (var, val))
-        return "\n".join(items)
+            items.append("%s->%s" % (var, val))
+        return "{" + "\n".join(items) + "}"
 
     __repr__ = __str__
 
@@ -207,35 +207,29 @@ class  VarMap(object):
 class Rule(object):
     def __init__( self,
                   consequent,
-                  antecedents,
+                  antecedents = (),
                   varfactory=global_varname_factory ):
 
-        self.standardized_mapping = VarMap()
+        self.varmap = VarMap()
         self.consequent = consequent.copy()
-        self.consequent.standardize_vars(varfactory, self.standardized_mapping)
+        self.consequent.standardize_vars(varfactory, self.varmap)
 
         self.antecedents = [a.copy() for a in antecedents]
         for a in self.antecedents:
-            a.standardize_vars(varfactory, self.standardized_mapping)
+            a.standardize_vars(varfactory, self.varmap)
 
     def __str__( self ):
         if len(self.antecedents) > 0:
             antstr = [str(x) for x in self.antecedents]
             return "Rule (map %s):: %s <- %s" % (
-                    self.standardized_mapping, self.consequent, antstr)
+                    self.varmap, self.consequent, antstr)
         else:
-            return "Rule (map %s):: %s" % (
-                    self.standardized_mapping, self.consequent)
+            return "Rule (map %s):: %s" % (self.varmap, self.consequent)
 
     __repr__ = __str__
 
     def copy( self ):
         return self.__class__(self.consequent, self.antecedents)
-
-    def resolve( self, query ):
-        """Returns a variable mapping (or None if it doesn't work)"""
-        map = VarMap()
-        if query.unify(self.consequent, map):
 
     def test( self ):
         return True
@@ -246,20 +240,66 @@ class Rule(object):
 class Prolog(object):
     def __init__( self ):
         self.rules = []
-        # TODO: make sure all rules are unique?  Does it matter?
 
     def add_rule( self, rule ):
         self.rules.append(rule)
 
-    def answer_iter( self, query ):
-        # TODO: this is the meat of everything, right?
+    def answer_iter( self, queries, varmap=None ):
+        """Finds matches for an entire list of queries by finding answers for
+        the first one and for each answer, passing the *rest* of the list into
+        this function.  When the list is empty, simply return the varmap
+        because an empty list is vacuously true.
+        """
+
+        if varmap is None:
+            varmap = VarMap()
+
+        if not queries:
+            yield varmap
+            return
+
+        query = queries[0]
+        rest = queries[1:]
+
+        # First, we determine whether the query (the first in the list) matches
+        # any rules.  For each matching rule, there are a number of ways in
+        # which the entire antecedent list for that rule can be made true, and
+        # we have to try them all.  But that's okay, because we can just call
+        # ourselve to get an iterator of all valid mappings for the entire list
+        # (recursion is fun, right?)
         for rule in self.rules:
-            map = VarMap()
-            # TODO: unify with the consequent.  If success, add to queries and
-            # do it all over again....
-            #
-            # We may want to make this a queries (plural) iterator and allow a
-            # (copy of a) map to be passed....
-        pass
+            rulemap = varmap.copy()
+
+            if query.unify(rule.consequent, rulemap):
+                # We found a matching rule.  Now try all of the ways that the
+                # antecedents can be made true.  For each of them, we call this
+                # function again with the *rest* of the query list and yield
+                # all resulting maps.  Neat!
+                for antmap in self.answer_iter(rule.antecedents, rulemap):
+                    for finalmap in self.answer_iter(rest, antmap):
+                        yield finalmap
+
+if __name__ == '__main__':
+    # Create some facts:
+
+    r1 = Rule(Predicate('exists', [
+                        Predicate('file',[Predicate('myfile'), Predicate('.c')])
+                        ]))
+    r2 = Rule(Predicate('buildable', [
+                        Predicate('file',[Var('base'), Predicate('.o')])
+                        ]),
+                [Predicate('exists', [
+                        Predicate('file',[Var('base'), Predicate('.c')])
+                        ])
+                ])
+
+    q = Predicate('buildable', [Predicate('file',[Predicate('myfile'), Predicate('.o')])])
+
+    prolog = Prolog()
+    prolog.add_rule(r1)
+    prolog.add_rule(r2)
+
+    for answer in prolog.answer_iter( [q] ):
+        print answer
 
 # vim: et sts=4 sw=4
