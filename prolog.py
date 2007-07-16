@@ -282,6 +282,9 @@ class Prolog(object):
 if __name__ == '__main__':
     # Create some facts:
 
+    r0 = Rule(Predicate('exists', [
+                        Predicate('file',[Predicate('myfile'), Predicate('.cc')])
+                        ]))
     r1 = Rule(Predicate('exists', [
                         Predicate('file',[Predicate('myfile'), Predicate('.c')])
                         ]))
@@ -292,13 +295,32 @@ if __name__ == '__main__':
                         Predicate('file',[Var('base'), Predicate('.c')])
                         ])
                 ])
+    r3 = Rule(Predicate('buildable', [
+                        Predicate('file',[Var('base'), Predicate('.o')])
+                        ]),
+                [Predicate('exists', [
+                        Predicate('file',[Var('base'), Predicate('.cc')])
+                        ])
+                ])
 
     q = Predicate('buildable', [Predicate('file',[Predicate('myfile'), Predicate('.o')])])
 
     prolog = Prolog()
+    prolog.add_rule(r0)
     prolog.add_rule(r1)
     prolog.add_rule(r2)
+    prolog.add_rule(r3)
 
+    print "RULES"
+    for rule in prolog.rules:
+        print rule
+
+    print
+    print "QUERY"
+    print q
+
+    print
+    print "ANSWERS"
     for answer in prolog.answer_iter( [q] ):
         print answer
 
