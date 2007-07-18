@@ -26,9 +26,9 @@ class Predicate(object):
     def __str__( self ):
         if len(self.args) > 0:
             argstr = ", ".join(str(x) for x in self.args)
-            return "Predicate(%s: %s)" % (self.name, argstr)
+            return "%s(%s)" % (self.name, argstr)
         else:
-            return "Predicate(%s)" % (self.name,)
+            return "%s" % (self.name,)
 
     __repr__ = __str__
 
@@ -104,7 +104,7 @@ class Var(object):
         self.name = name
 
     def __str__( self ):
-        return "Var(%s)" % self.name
+        return "_%s" % self.name
 
     __repr__ = __str__
 
@@ -139,7 +139,7 @@ class Var(object):
             mapping.add(me, other)
             return True
 
-class  VarMap(object):
+class VarMap(object):
     """Contains variable assignment pairs"""
     def __init__( self ):
         self.vardict = {}
@@ -150,11 +150,17 @@ class  VarMap(object):
             newmap.vardict[k] = (var.copy(), val.copy())
         return newmap
 
+    def reversed( self ):
+        map = self.__class__()
+        for name, (var, val) in self.vardict.iteritems():
+            map.add(val, var)
+        return map
+
     def __str__( self ):
         items = []
         for k, (var, val) in self.vardict.iteritems():
             items.append("%s->%s" % (var, val))
-        return "{" + "\n".join(items) + "}"
+        return "{" + ", ".join(items) + "}"
 
     __repr__ = __str__
 
@@ -164,10 +170,12 @@ class  VarMap(object):
     def add( self, var, value ):
         """Adds a new variable mapping to the dictionary.
 
-        Raises ValueError if a mapping already exists.
+        Raises ValueError if a mapping already exists or the key is not a var.
         """
+        if not self.is_var(var):
+            raise ValueError("Tried to insert non-var %s into map" % (var,))
         if var.name in self.vardict:
-            raise ValueError(var.name + " is already in the mapping")
+            raise ValueError("%s is already in the mapping" % (var,))
 
         # No flattening is done at the moment
         self.vardict[var.name] = (var, value)
@@ -220,11 +228,10 @@ class Rule(object):
 
     def __str__( self ):
         if len(self.antecedents) > 0:
-            antstr = [str(x) for x in self.antecedents]
-            return "Rule (map %s):: %s <- %s" % (
-                    self.varmap, self.consequent, antstr)
+            antstr = ", ".join(str(x) for x in self.antecedents)
+            return "%s<=%s::%s" % (self.consequent, antstr, self.varmap)
         else:
-            return "Rule (map %s):: %s" % (self.varmap, self.consequent)
+            return "%s::%s" % (self.consequent, self.varmap)
 
     __repr__ = __str__
 
@@ -239,10 +246,18 @@ class Rule(object):
 
 class Prolog(object):
     def __init__( self ):
+        # Contains all of the rules
         self.rules = []
+
+        # Keyed on the name of the consequent predicate, to make searching
+        # faster.
+        self.rules_dict = {}
 
     def add_rule( self, rule ):
         self.rules.append(rule)
+        if rule.consequent.name not in self.rules_dict:
+            self.rules_dict[rule.consequent.name] = []
+        self.rules_dict[rule.consequent.name].append(rule)
 
     def answer_iter( self, queries, varmap=None ):
         """Finds matches for an entire list of queries by finding answers for
@@ -255,7 +270,7 @@ class Prolog(object):
             varmap = VarMap()
 
         if not queries:
-            yield varmap
+            yield varmap, []
             return
 
         query = queries[0]
@@ -267,7 +282,10 @@ class Prolog(object):
         # we have to try them all.  But that's okay, because we can just call
         # ourselve to get an iterator of all valid mappings for the entire list
         # (recursion is fun, right?)
-        for rule in self.rules:
+        if query.name not in self.rules_dict:
+            return
+
+        for rule in self.rules_dict[query.name]:
             rulemap = varmap.copy()
 
             if query.unify(rule.consequent, rulemap):
@@ -275,41 +293,46 @@ class Prolog(object):
                 # antecedents can be made true.  For each of them, we call this
                 # function again with the *rest* of the query list and yield
                 # all resulting maps.  Neat!
-                for antmap in self.answer_iter(rule.antecedents, rulemap):
-                    for finalmap in self.answer_iter(rest, antmap):
-                        yield finalmap
+                for antmap, antrules in self.answer_iter(
+                        rule.antecedents, rulemap):
+                    for finalmap, finalrules in self.answer_iter(rest, antmap):
+                        yield finalmap, [rule] + finalrules + antrules
 
 if __name__ == '__main__':
+    prolog = Prolog()
+
     # Create some facts:
 
-    r0 = Rule(Predicate('exists', [
+    prolog.add_rule(Rule(Predicate('exists', [
                         Predicate('file',[Predicate('myfile'), Predicate('.cc')])
-                        ]))
-    r1 = Rule(Predicate('exists', [
-                        Predicate('file',[Predicate('myfile'), Predicate('.c')])
-                        ]))
-    r2 = Rule(Predicate('buildable', [
+                        ])))
+    prolog.add_rule(Rule(Predicate('exists', [
+                        Predicate('file',[Predicate('myfile'), Predicate('.y')])
+                        ])))
+    prolog.add_rule(Rule(Predicate('buildable', [
                         Predicate('file',[Var('base'), Predicate('.o')])
                         ]),
-                [Predicate('exists', [
+                [Predicate('buildable', [
                         Predicate('file',[Var('base'), Predicate('.c')])
                         ])
-                ])
-    r3 = Rule(Predicate('buildable', [
+                ]))
+    prolog.add_rule(Rule(Predicate('buildable', [
+                        Predicate('file',[Var('base'), Predicate('.c')])
+                        ]),
+                [Predicate('exists', [
+                        Predicate('file',[Var('base'), Predicate('.y')])
+                        ])
+                ]))
+    prolog.add_rule(Rule(Predicate('buildable', [
                         Predicate('file',[Var('base'), Predicate('.o')])
                         ]),
                 [Predicate('exists', [
                         Predicate('file',[Var('base'), Predicate('.cc')])
                         ])
-                ])
+                ]))
 
     q = Predicate('buildable', [Predicate('file',[Predicate('myfile'), Predicate('.o')])])
 
-    prolog = Prolog()
-    prolog.add_rule(r0)
-    prolog.add_rule(r1)
-    prolog.add_rule(r2)
-    prolog.add_rule(r3)
 
     print "RULES"
     for rule in prolog.rules:
