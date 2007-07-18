@@ -238,10 +238,36 @@ class Rule(object):
     def copy( self ):
         return self.__class__(self.consequent, self.antecedents)
 
-    def test( self ):
+    def try_to_satisfy( self ):
+        if not self.pre_test():
+            self.commands()
+            if not self.post_test():
+                return False
         return True
 
+    def pre_test( self ):
+        """Runs after all antecedents have been shown to be true for a rule.
+
+        If the test returns True, then no further action is
+        taken and the rule is deemed True.  If the test returns False, then the
+        associated commands for the rule are run.
+        """
+        return True
+
+    def post_test( self ):
+        """Runs after this rule's commands have been executed.
+
+        Its purpose is to verify that the commands succeeded.  Typically it
+        just runs the pre_test again to make sure that the commands worked.
+        """
+        return self.pre_test()
+
     def commands( self ):
+        """Runs if the pre_test comes back False.
+        
+        The intent is to *make* the test True if at all possible (e.g., if a
+        file is not up to date, the commands are run to build it).
+        """
         pass
 
 class Prolog(object):
@@ -296,7 +322,12 @@ class Prolog(object):
                 for antmap, antrules in self.answer_iter(
                         rule.antecedents, rulemap):
                     for finalmap, finalrules in self.answer_iter(rest, antmap):
-                        yield finalmap, [rule] + finalrules + antrules
+                        # It is not quite enough in this system to have true
+                        # antecedents and therefore assume a true consequent.
+                        # If the following test succeeds, though, we can
+                        # proceed.
+                        if rule.try_to_satisfy():
+                            yield finalmap, [rule] + finalrules + antrules
 
 if __name__ == '__main__':
     prolog = Prolog()
@@ -304,7 +335,8 @@ if __name__ == '__main__':
     # Create some facts:
 
     prolog.add_rule(Rule(Predicate('exists', [
-                        Predicate('file',[Predicate('myfile'), Predicate('.cc')])
+                        Predicate('file',
+                            [Predicate('myfile'), Predicate('.cc')])
                         ])))
     prolog.add_rule(Rule(Predicate('exists', [
                         Predicate('file',[Predicate('myfile'), Predicate('.y')])
@@ -331,7 +363,8 @@ if __name__ == '__main__':
                         ])
                 ]))
 
-    q = Predicate('buildable', [Predicate('file',[Predicate('myfile'), Predicate('.o')])])
+    q = Predicate('buildable',
+            [Predicate('file',[Predicate('myfile'), Predicate('.o')])])
 
 
     print "RULES"
