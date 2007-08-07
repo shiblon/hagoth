@@ -73,6 +73,27 @@ def iter_string_matches(s1, s2):
     """ Try to build a variable mapping that unifies the two variable-containing
         strings.
 
+        A matrix might look something like this:
+
+              0  1  2  3  4  5  6
+              a  b  c  c  c {e} e
+        0  a  1  -  -  -  -  -  -
+        1 {b} 2  2  3  4  5  6  7  
+        2  c  -  -  3  4  5  6  -
+        3 {d} -  -  4  4  5  6  7
+        4  e  -  -  -  -  -  6  7
+
+        All paths through the matrix that begin at 0,0 and end at 4,6 represent
+        a possible match (row,column coordinates).  Each step of the path must
+        increase the cost value by 1.  From a constant (non-var) you can only
+        travel down and to the right.  From a row variable, you can also travel
+        right, and from a column variable, you can also travel left.
+
+        0,0; 1,1; 1,2; 1,3; 2,4; 3,5; 4,6 : {b}=bcc, {d}={e}
+        0,0; 1,1; 1,2; 2,3; 3,4; 3,5; 4,6 : {b}=bc, {d}=c{e}
+
+        etc.
+
         >>> for vmap in iter_string_matches("a{b}c{d}e", "abccc{e}e"):
         ...     print vmap
         None
@@ -129,8 +150,12 @@ def iter_string_matches(s1, s2):
             yield path
             continue
         # Try to push every neigbor onto the stack, but only if its cost is
-        # equal to this cost - 1
+        # equal to this cost - 1, and the following conditions are met:
+        # If row is a var: can travel left
+        # If col is a var: can travel up
+        # Always: can travel diagonally up-left
         cost = matrix[row][col]
+        # TODO: Fix to only travel in possible directions
         for nrow, ncol in ((row-1, col), (row-1, col-1), (row, col-1)):
             if nrow < 0 or ncol < 0:
                 continue
