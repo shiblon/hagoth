@@ -25,8 +25,7 @@ rule_list = []
 rule_map = {}
 
 def is_var( v ) :
-    # TODO: Make this more robust (use a real variable representation)
-    return len(v) > 1
+    return v[0] == '{' and v[-1] == '}'
 
 
 class PathInfo(object):
@@ -204,15 +203,15 @@ class MatchMatrix(object):
             >>> for map in matrix.maps():
             ...     print map
             [['{b}', 'b'], ['{c}', 'c'], ['{d}', 'd'], ['{e}', 'e']]
-            [['{b}', 'b', 'c'], ['{c}', '{d}'], ['{e}', 'd', 'e']]
-            [['{b}', 'b'], ['{c}', 'c', '{d}'], ['{e}', 'd', 'e']]
+            [['{b}', 'bc'], ['{c}', '{d}'], ['{e}', 'de']]
+            [['{b}', 'b'], ['{c}', 'c', '{d}'], ['{e}', 'de']]
             >>> matrix = MatchMatrix("a{b}c{d}e", "abccc{e}e")
             >>> for map in matrix.maps():
             ...     print map
-            [['{b}', 'b', 'c', 'c'], ['{d}', '{e}']]
-            [['{b}', 'b', 'c'], ['{d}', 'c', '{e}']]
-            [['{b}', 'b'], ['{d}', 'c', 'c', '{e}']]
-            [['{b}', 'b', 'c', 'c', 'c'], ['{e}', 'c', '{d}']]
+            [['{b}', 'bcc'], ['{d}', '{e}']]
+            [['{b}', 'bc'], ['{d}', 'c', '{e}']]
+            [['{b}', 'b'], ['{d}', 'cc', '{e}']]
+            [['{b}', 'bccc'], ['{e}', 'c', '{d}']]
         """
         for path in self.paths():
             prev_row = None
@@ -222,9 +221,25 @@ class MatchMatrix(object):
                 # If we move within a row, we need to append to the most recent
                 # row variable match.
                 if row == prev_row:
-                    map[-1].append(self.ps2[col])
+                    oldvar = is_var(map[-1][-1])
+                    newvar = is_var(self.ps2[col])
+                    # If we are interfacing with a variable, then we can't make
+                    # a longer string out of the most recent entry.  Otherwise,
+                    # we can.
+                    if oldvar or newvar:
+                        map[-1].append(self.ps2[col])
+                    else:
+                        map[-1][-1] += self.ps2[col]
                 elif col == prev_col:
-                    map[-1].append(self.ps1[row])
+                    oldvar = is_var(map[-1][-1])
+                    newvar = is_var(self.ps1[row])
+                    # If we are interfacing with a variable, then we can't make
+                    # a longer string out of the most recent entry.  Otherwise,
+                    # we can.
+                    if oldvar or newvar:
+                        map[-1].append(self.ps1[row])
+                    else:
+                        map[-1][-1] += self.ps1[row]
                 else:
                     # Moving diagonally.  If we have a variable type, create a
                     # new match.  This is straightforward for 'r' and 'c' type
