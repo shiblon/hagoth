@@ -337,16 +337,29 @@ def prepare_func(func):
 def provides(consequent):
     def add_provision(func):
         prepare_func(func)
-        func.provides.append(consequent)
+        func.provides.append(FileMatchString(consequent))
         return func
     return add_provision
 
 def requires(antecedent):
     def add_requirement(func):
         prepare_func(func)
-        func.requires.append(antecedent)
+        func.requires.append(FileMatchString(antecedent))
         return func
     return add_requirement
+
+class FileMatchString(object):
+    def __init__( self, pattern ):
+        self.pattern = pattern
+
+    def __repr__( self ):
+        return repr(self.pattern)
+
+# TODO:
+#   The env parameter somehow needs to be filled in.  The decorators should
+#   really be wrapping the function with another one that fills it in, but it
+#   is unclear how this would work.
+
 
 class Test(object):
     @provides("filename.o")
@@ -362,4 +375,4 @@ def _test():
 if __name__ == '__main__':
     _test()
 
-# vim: sw=4 sts=4 et
+# vim: sw=4 sts=4 et noic
