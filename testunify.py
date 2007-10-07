@@ -1,28 +1,5 @@
-"""Decorators for logic-based builds
-
-provides::
-  indicates that a function provides a particular string (can be a match
-  string)
-
-requires::
-  indicates that certain dependencies must be met before it makes sense
-  to call this function.
-
-A Global registry of rules is created (the knowledge base), keyed on the
-consequent (rules are repeated in the registry if they have more than one
-consequent).  Essentially, the provides decorator ensures that the function is
-in the registry and the requires decorator adds antecedents to it.
-
-The function itself needs access to the variables mentioned in match rules, as
-well as a list of antecedents, etc.  All of this must be available to the
-function body, which is sort of tricky.  Right now I'm favoring a magic
-argument that is always set to an object that holds all of the interesting
-things that the function might need.
-
+"""Unification functions
 """
-
-rule_list = []
-rule_map = {}
 
 def is_var( v ) :
     return v[0] == '{' and v[-1] == '}'
@@ -327,46 +304,6 @@ def parse_match_string(s):
     if cur_var:
         raise ValueError("Unterminated variable name " + cur_var)
     return result
-
-def prepare_func(func):
-    if not hasattr(func, 'provides'):
-        func.provides = []
-    if not hasattr(func, 'requires'):
-        func.requires = []
-
-def provides(consequent):
-    def add_provision(func):
-        prepare_func(func)
-        func.provides.append(FileMatchString(consequent))
-        return func
-    return add_provision
-
-def requires(antecedent):
-    def add_requirement(func):
-        prepare_func(func)
-        func.requires.append(FileMatchString(antecedent))
-        return func
-    return add_requirement
-
-class FileMatchString(object):
-    def __init__( self, pattern ):
-        self.pattern = pattern
-
-    def __repr__( self ):
-        return repr(self.pattern)
-
-# TODO:
-#   The env parameter somehow needs to be filled in.  The decorators should
-#   really be wrapping the function with another one that fills it in, but it
-#   is unclear how this would work.
-
-
-class Test(object):
-    @provides("filename.o")
-    @requires("filename.c")
-    def build_filename_o( self, env ):
-        print self
-        print env
 
 def _test():
     import doctest
