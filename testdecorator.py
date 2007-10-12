@@ -9,27 +9,30 @@ def register_consequent(consequent, rule, registry):
 
 class Var(object):
   """A variable, consisting of a name and potentially an assignment"""
-  def __init__( self, name, value=None ):
-    """Create a variable with the given name, maybe assigning a value
+  def __init__( self, name ):
+    """Create a variable with the given name
       
-      >>> v = Var('name', 'val')
+      >>> v = Var('name')
       >>> v
-      Var('name', 'val')
+      Var('name')
       >>> v.name
       'name'
-      >>> v.value
-      'val'
-      >>> Var('justaname')
-      Var('justaname')
     """
     self.name = name
-    self.value = value
 
   def __repr__( self ):
-    if self.value is None:
-      return "Var('%s')" % self.name
-    else:
-      return "Var('%s', '%s')" % (self.name, self.value)
+    return "%s(%r)" % (self.__class__.__name__, self.name)
+
+  def substitute( self, valuedict ):
+    """Return the result of applying substitution given the dict of values
+
+    >>> v = Var('hi')
+    >>> v.substitute({'x': 'stuff'})
+    Var('hi')
+    >>> v.substitute({'hi': 'hi there'})
+    'hi there'
+    """
+    return valuedict.get(self.name, self)
 
 class Predicate(object):
   """A predicate.
@@ -54,10 +57,58 @@ class FilePattern(Predicate):
       >>> fp = FilePattern("myfile-{number}.{ext}")
       >>> fp.pattern
       'myfile-{number}.{ext}'
+      >>> fp.vars
+      [Var('number'), Var('ext')]
+      >>> fp.consts
+      ['myfile-', '.']
     """
     super(FilePattern, self).__init__()
     self.pattern = pattern
-    # TODO: Parse the string
+    self.components = list(self._components(self._tokens(pattern)))
+    self.vars = list(c for c in self.components if isinstance(c, Var))
+    self.consts = list(c for c in self.components if not isinstance(c, Var))
+
+  def realized( self, **values ):
+    """Return a realized version of the pattern, with variables filled in.  It
+    is okay to leave some of them unset.
+
+    >>> fp = FilePattern("{{}}my}}file-{number}.{ext}")
+    >>> fp.realized(number = '1')
+    FilePattern('{{}}my}}file-1.{ext}')
+    >>> fp.realized(number = '2', ext = 'hi')
+    FilePattern('{{}}my}}file-2.hi')
+    """
+    sub = self._substitute
+    pattern_list = []
+    for component in self.components:
+      s = sub(component, values)
+      if isinstance(s, Var):
+        pattern_list.append("{%s}" % s.name)
+      else:
+        pattern_list.append(s.replace('{', '{{').replace('}', '}}'))
+    return FilePattern("".join(pattern_list))
+
+  def __repr__( self ):
+    return "%s(%r)" % (self.__class__.__name__, self.pattern)
+  
+  @staticmethod
+  def _substitute( item, valuedict ):
+    """Perform a substitution on this item given the values in the dict
+
+    >>> FP = FilePattern
+    >>> FP._substitute(Var('hi'), {'x': '1'})
+    Var('hi')
+    >>> FP._substitute(Var('hi'), {'hi': 'hi there'})
+    'hi there'
+    >>> FP._substitute(Var('hi'), {'hi': Var('hi there')})
+    Var('hi there')
+    >>> FP._substitute('a string', {'a string': 'something else'})
+    'a string'
+    """
+    if isinstance(item, Var) and item:
+      return item.substitute(valuedict)
+    else:
+      return item
 
   @staticmethod
   def _components( tokens ):
