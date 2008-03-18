@@ -1,12 +1,6 @@
 """Decorator functions
 """
 
-def register_antecedent(antecedent, rule, registry):
-  pass
-
-def register_consequent(consequent, rule, registry):
-  pass
-
 class Var(object):
   """A variable, consisting of a name and potentially an assignment"""
   def __init__( self, name ):
@@ -87,6 +81,9 @@ class FilePattern(Predicate):
       else:
         pattern_list.append(s.replace('{', '{{').replace('}', '}}'))
     return FilePattern("".join(pattern_list))
+
+  def unify( self, other ):
+    pass
 
   def __repr__( self ):
     return "%s(%r)" % (self.__class__.__name__, self.pattern)

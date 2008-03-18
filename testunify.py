@@ -23,7 +23,7 @@ class MatchMatrix(object):
             . : constant-constant match
             r : row var match
             c : col var match
-            * : row/col var match (equivalence)
+            * : row/col var match
 
             Rules (everything must match at least one other thing, no empty
             matches):
